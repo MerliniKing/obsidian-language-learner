@@ -166,7 +166,6 @@ let collumns = reactive<DataTableColumns<Row>>([
     {
         title: "Status",
         key: "status",
-        width: "70",
         defaultFilterOptionValues: statusMap.slice(1),
         filterOptions: [
             { label: t("Ignore"), value: t("Ignore") },
