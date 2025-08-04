@@ -36,7 +36,7 @@
                     lineHeight: store.lineHeight,
                 }" v-html="renderedText" />
             <!-- 底栏 -->
-            <div class="pagination" style="
+            <!-- <div class="pagination" style="
                     padding: 10px 0;
                     border-top: 2px solid gray;
                     display: flex;
@@ -44,7 +44,7 @@
                 ">
                 <NPagination style="justify-content: center" v-model:page="page" v-model:page-size="pageSize"
                     :item-count="totalLines" show-size-picker :page-sizes="pageSizes" :page-slot="pageSlot" />
-            </div>
+            </div> -->
             <NDrawer v-model:show="activeNotes" :placement="'bottom'" :close-on-esc="true" :auto-focus="true"
                 :on-after-enter="afterNoteEnter" :on-after-leave="afterNoteLeave" to="#langr-reading"
                 :default-height="250" resizable>
@@ -250,6 +250,7 @@ watch(
         // 确保 renderedText 已经渲染到 DOM，并且子元素已就绪
         await nextTick();
         if (isFirstLoad.value) {
+            // console.log("Adding ignores for the first time...");
             addIgnores();
             isFirstLoad.value = false; // 调用后将标志设置为 false，防止再次调用
         }
