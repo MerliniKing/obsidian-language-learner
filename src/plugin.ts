@@ -9,6 +9,7 @@ import {
     TFile,
     normalizePath,
     Platform,
+    requestUrl,
 } from "obsidian";
 import { around } from "monkey-around";
 import { createApp, App as VueApp } from "vue";
@@ -335,8 +336,139 @@ export default class LanguageLearner extends Plugin {
     };
 
     generateArticle = async () => {
+        // 步骤 1: 获取当前活动文件
+        console.log("Generating article...");
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!activeView || !activeView.file) {
+            new Notice("Please open a Markdown file first.");
             return;
+        }
 
+        const file = activeView.file;
+
+        // 步骤 2: 读取 front matter
+        let fileContent = await this.app.vault.read(file);
+        const cache = this.app.metadataCache.getFileCache(file);
+        const url = cache?.frontmatter?.['langr-article-url'];
+
+        if (!url) {
+            new Notice("Missing 'langr-article-url' in front matter.");
+            return;
+        }
+
+        new Notice(`Accessing URL: ${url}...`);
+
+        const articlePlaceholder = '^^^article';
+        const wordsPlaceholder = '^^^words';
+
+        if (!fileContent.includes(articlePlaceholder) || !fileContent.includes(wordsPlaceholder)) {
+            new Notice(`Missing required placeholders: ${articlePlaceholder} and ${wordsPlaceholder}`);
+            return;
+        }
+        
+        try {
+            const response = await requestUrl({ url });
+
+            if (response.status !== 200) {
+                new Notice(`Failed to fetch URL. Status: ${response.status}`);
+                return;
+            }
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(response.text, 'text/html');
+
+            const parentDivSelector = "#bbcle-content > div > div.widget-container.widget-container-left > div.widget.widget-richtext.\\36 > div";
+            const startElementSelector = "#bbcle-content > div > div.widget-container.widget-container-left > div.widget.widget-richtext.\\36 > div > h3:nth-child(14)";
+
+            const parentDiv = doc.querySelector(parentDivSelector);
+            const startElement = doc.querySelector(startElementSelector);
+
+            if (!parentDiv || !startElement) {
+                new Notice("Could not find the specified start or parent elements on the page.");
+                return;
+            }
+
+            let markdownContent = '';
+            let currentNode: Element | null = startElement;
+
+            const processNode = (node: Node): string => {
+                let output = '';
+                if (node.nodeType === Node.TEXT_NODE) {
+                    output += node.textContent;
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    const element = node as Element;
+                    switch (element.tagName) {
+                        case 'STRONG':
+                            // 关键修改: 先处理子节点，然后判断是否以换行结尾
+                            const strongContent = processChildren(element);
+                            if (strongContent.endsWith('\n')) {
+                                // 如果以换行符结尾，将换行符移到**外面
+                                output += `**${strongContent.slice(0, -1).trim()}**\n`;
+                            } else if(strongContent.trim() === 'TRANSCRIPT') {
+                                output += `### Transcipt\n\n`;
+                            }   else {
+                                // 否则，直接加粗
+                                output += `**${strongContent.trim()}**`;
+                            }
+                            break;
+                        case 'BR':
+                            output += '\n';
+                            break;
+                        default:
+                            output += processChildren(element);
+                            break;
+                    }
+                }
+                return output;
+            };
+
+            const processChildren = (element: Element): string => {
+                let childrenOutput = '';
+                element.childNodes.forEach(child => {
+                    childrenOutput += processNode(child);
+                });
+                return childrenOutput;
+            };
+
+            while (currentNode) {
+                if (currentNode.tagName === 'H3') {
+                    markdownContent += `### ${currentNode.textContent.trim()}\n\n`;
+                } else if (currentNode.tagName === 'P') {
+                    const processedText = processChildren(currentNode);
+                    markdownContent += `${processedText.trim()}\n\n`;
+                }
+
+                currentNode = currentNode.nextElementSibling;
+                if (!currentNode || currentNode.parentElement !== parentDiv) {
+                    break;
+                }
+            }
+            
+            // ... (省略将内容写入文件的逻辑)
+            if (!markdownContent) {
+                new Notice("Extracted article content is empty.");
+                return;
+            }
+
+            const startIndex = fileContent.indexOf(articlePlaceholder) + articlePlaceholder.length;
+            const endIndex = fileContent.indexOf(wordsPlaceholder);
+
+            if (startIndex >= endIndex) {
+                new Notice("Placeholder order is incorrect. `^^^article` must come before `^^^words`.");
+                return;
+            }
+
+            const newContent = fileContent.substring(0, startIndex) +
+                             `\n${markdownContent.trim()}\n\n` +
+                             fileContent.substring(endIndex);
+
+            await this.app.vault.modify(file, newContent);
+            new Notice("Article content successfully generated and inserted!");
+
+        } catch (error) {
+            console.error("Failed to generate article:", error);
+            new Notice("An error occurred. Check the console for details.");
+        }
     };
 
     refreshReviewDb = async () => {
