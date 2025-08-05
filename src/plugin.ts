@@ -204,6 +204,12 @@ export default class LanguageLearner extends Plugin {
                 modal.open();
             },
         });
+        this.addCommand({
+            id: "langr-generate-article",
+            name: t("Generate Article"),
+            hotkeys: [{ modifiers: ['Alt'], key: 'g' }],
+            callback: this.generateArticle,
+        });
     }
 
     registerCustomViews() {
@@ -326,6 +332,11 @@ export default class LanguageLearner extends Plugin {
         let text = word2Meaning + "\n\n" + "#### 反向查询\n" + meaning2Word;
         let db = dataBase as TFile;
         this.app.vault.modify(db, text);
+    };
+
+    generateArticle = async () => {
+            return;
+
     };
 
     refreshReviewDb = async () => {
