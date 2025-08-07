@@ -336,8 +336,6 @@ export default class LanguageLearner extends Plugin {
     };
 
     generateArticle = async () => {
-        // 步骤 1: 获取当前活动文件
-        console.log("Generating article...");
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!activeView || !activeView.file) {
             new Notice("Please open a Markdown file first.");
@@ -345,27 +343,22 @@ export default class LanguageLearner extends Plugin {
         }
 
         const file = activeView.file;
-
-        // 步骤 2: 读取 front matter
         let fileContent = await this.app.vault.read(file);
-        const cache = this.app.metadataCache.getFileCache(file);
-        const url = cache?.frontmatter?.['langr-article-url'];
+        const url = this.app.metadataCache.getFileCache(file)?.frontmatter?.['langr-article-url'];
 
         if (!url) {
             new Notice("Missing 'langr-article-url' in front matter.");
             return;
         }
 
-        new Notice(`Accessing URL: ${url}...`);
-
         const articlePlaceholder = '^^^article';
         const wordsPlaceholder = '^^^words';
 
         if (!fileContent.includes(articlePlaceholder) || !fileContent.includes(wordsPlaceholder)) {
-            new Notice(`Missing required placeholders: ${articlePlaceholder} and ${wordsPlaceholder}`);
+            new Notice(`Missing required placeholders: ${articlePlaceholder} and ${wordsPlaceholder}.`);
             return;
         }
-        
+
         try {
             const response = await requestUrl({ url });
 
@@ -377,90 +370,144 @@ export default class LanguageLearner extends Plugin {
             const parser = new DOMParser();
             const doc = parser.parseFromString(response.text, 'text/html');
 
-            const parentDivSelector = "#bbcle-content > div > div.widget-container.widget-container-left > div.widget.widget-richtext.\\36 > div";
-            const startElementSelector = "#bbcle-content > div > div.widget-container.widget-container-left > div.widget.widget-richtext.\\36 > div > h3:nth-child(14)";
+            // --- 新的标题提取逻辑 ---
+            const titleElement = doc.querySelector('title');
+            let newTitle = null;
+            if (titleElement) {
+                const titleText = titleElement.textContent.trim();
+                const parts = titleText.split('/');
+                if (parts.length > 1) {
+                    newTitle = parts[parts.length - 1].trim();
+                } else {
+                    newTitle = titleText;
+                }
+            }
 
-            const parentDiv = doc.querySelector(parentDivSelector);
-            const startElement = doc.querySelector(startElementSelector);
+            if (newTitle) {
+                newTitle = newTitle.replace(/[.!?。！？]$/, '');
+                
+                const parentPath = file.parent.path === '/' ? '' : file.parent.path;
+                const newFilePath = `${parentPath}/${newTitle}.md`;
+                
+                await this.app.vault.rename(file, newFilePath);
+                
+                const originValue = `《${newTitle}》`;
+                
+                let frontMatterRegex = /^---\n([\s\S]*?)\n---/;
+                let newFrontMatter = `langr-origin: ${originValue}`;
+                
+                if (frontMatterRegex.test(fileContent)) {
+                    fileContent = fileContent.replace(frontMatterRegex, (match, p1) => {
+                        if (!p1.includes('langr-origin:')) {
+                            return `---\n${p1}\n${newFrontMatter}\n---`;
+                        } else {
+                            return match.replace(/langr-origin: .*/, newFrontMatter);
+                        }
+                    });
+                } else {
+                    fileContent = `---\n${newFrontMatter}\n---\n\n${fileContent}`;
+                }
+            }
 
-            if (!parentDiv || !startElement) {
-                new Notice("Could not find the specified start or parent elements on the page.");
+            const parentDivSelector = ".widget.widget-richtext > div";
+            const parentDiv = doc.querySelector(parentDivSelector) as HTMLElement;
+            
+            if (!parentDiv) {
+                new Notice("Could not find the content container element.");
+                return;
+            }
+            
+            const evaluateXPath = (xpath: string, contextNode: Node = doc): Node | null => {
+                const result = doc.evaluate(xpath, contextNode, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                return result.singleNodeValue;
+            };
+
+            const startElementXPath = "//h3[contains(text(), 'Vocabulary')]";
+            const startElement = evaluateXPath(startElementXPath) as Element;
+
+            if (!startElement) {
+                new Notice("Could not find the 'VOCABULARY' section. Website structure may have changed.");
                 return;
             }
 
             let markdownContent = '';
             let currentNode: Element | null = startElement;
 
-            const processNode = (node: Node): string => {
-                let output = '';
-                if (node.nodeType === Node.TEXT_NODE) {
-                    output += node.textContent;
-                } else if (node.nodeType === Node.ELEMENT_NODE) {
-                    const element = node as Element;
-                    switch (element.tagName) {
-                        case 'STRONG':
-                            // 关键修改: 先处理子节点，然后判断是否以换行结尾
-                            const strongContent = processChildren(element);
-                            if (strongContent.endsWith('\n')) {
-                                // 如果以换行符结尾，将换行符移到**外面
-                                output += `**${strongContent.slice(0, -1).trim()}**\n`;
-                            } else if(strongContent.trim() === 'TRANSCRIPT') {
-                                output += `### Transcipt\n\n`;
-                            }   else {
-                                // 否则，直接加粗
-                                output += `**${strongContent.trim()}**`;
-                            }
-                            break;
-                        case 'BR':
-                            output += '\n';
-                            break;
-                        default:
-                            output += processChildren(element);
-                            break;
-                    }
-                }
-                return output;
-            };
-
             const processChildren = (element: Element): string => {
                 let childrenOutput = '';
                 element.childNodes.forEach(child => {
-                    childrenOutput += processNode(child);
+                    // console.log('Processing child:', child);
+                    if (child.nodeType === Node.TEXT_NODE) {
+                        // console.log('Processing text node:', child.textContent);
+                        if( child.textContent.trim() !== '') {
+                            childrenOutput += child.textContent;    
+                        }
+                    } else if (child.nodeType === Node.ELEMENT_NODE) {
+                        const subElement = child as Element;
+                        // console.log('Processing element node:',subElement.tagName, subElement.innerHTML);
+                        switch (subElement.tagName) {
+                            case 'STRONG':
+                                // 检查是否是 '<strong>&nbsp;</strong>'
+                                if (subElement.innerHTML.trim() === '&nbsp;') {
+                                    break; // 直接忽略
+                                }
+                                // 检查是否是 '<strong><br></strong>'
+                                if (subElement.firstElementChild && subElement.firstElementChild.tagName === 'BR' && subElement.children.length === 1) {
+                                    childrenOutput += '\n\n'; // 只添加换行，不加粗
+                                    break;
+                                }
+
+                                const strongContent = processChildren(subElement);
+                                // console.log('Strong content:', strongContent);
+                                if(strongContent === "TRANSCRIPT"){
+                                    childrenOutput += `### Transcipt\n\n`;
+                                } else {
+                                    childrenOutput += `${strongContent}`;
+                                }
+                                break;
+                            case 'BR':
+                                childrenOutput += '\n\n';
+                                break;
+                            default:
+                                childrenOutput += processChildren(subElement);
+                                break;
+                        }
+                    }
+                    // console.log('After processing:', childrenOutput);
                 });
                 return childrenOutput;
             };
 
             while (currentNode) {
                 if (currentNode.tagName === 'H3') {
-                    markdownContent += `### ${currentNode.textContent.trim()}\n\n`;
+                    markdownContent += `### Vocabulary\n\n`;
                 } else if (currentNode.tagName === 'P') {
                     const processedText = processChildren(currentNode);
                     markdownContent += `${processedText.trim()}\n\n`;
                 }
-
+                
                 currentNode = currentNode.nextElementSibling;
-                if (!currentNode || currentNode.parentElement !== parentDiv) {
+                if (!currentNode || !parentDiv.contains(currentNode)) {
                     break;
                 }
             }
             
-            // ... (省略将内容写入文件的逻辑)
             if (!markdownContent) {
                 new Notice("Extracted article content is empty.");
                 return;
             }
 
-            const startIndex = fileContent.indexOf(articlePlaceholder) + articlePlaceholder.length;
-            const endIndex = fileContent.indexOf(wordsPlaceholder);
+            const placeholderStartIndex = fileContent.indexOf(articlePlaceholder) + articlePlaceholder.length;
+            const placeholderEndIndex = fileContent.indexOf(wordsPlaceholder);
 
-            if (startIndex >= endIndex) {
+            if (placeholderStartIndex >= placeholderEndIndex) {
                 new Notice("Placeholder order is incorrect. `^^^article` must come before `^^^words`.");
                 return;
             }
 
-            const newContent = fileContent.substring(0, startIndex) +
-                             `\n${markdownContent.trim()}\n\n` +
-                             fileContent.substring(endIndex);
+            const newContent = fileContent.substring(0, placeholderStartIndex) +
+                             `\n\n${markdownContent.trim()}\n\n` +
+                             fileContent.substring(placeholderEndIndex);
 
             await this.app.vault.modify(file, newContent);
             new Notice("Article content successfully generated and inserted!");

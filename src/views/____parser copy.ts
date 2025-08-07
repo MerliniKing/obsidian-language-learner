@@ -30,7 +30,9 @@ export class TextParser {
         // --- 修改点 1：清理输入数据 ---
         // 移除仅包含空白字符的行，确保段落能被正确分割
         const cleanedData = data.trim().replace(/^[ \t\r\f\v\u00a0]+$/gm, "");
+        console.log("Parsing data:", cleanedData); // --- IGNORE --- 
         let newHTML = await this.text2HTML(cleanedData);
+        console.log("Generated HTML:", newHTML); // --- IGNORE --- 
         return newHTML;
     }
 

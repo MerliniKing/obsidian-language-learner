@@ -373,8 +373,6 @@ useEvent(window, "obsidian-langr-search", async (evt: CustomEvent) => {
 	if (meaningSearchRes && meaningSearchRes.result.basic) {
 		meaningFromSearch = stripHtmlTags(meaningSearchRes.result.basic);
 	}
-	console.log("Search result:", meaningSearchRes);
-	console.log("Meaning from search:", meaningFromSearch);
 
 	if (target) {
 		let sentenceEl = target.parentElement.hasClass("stns")

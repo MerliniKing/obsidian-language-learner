@@ -250,7 +250,6 @@ watch(
         // 确保 renderedText 已经渲染到 DOM，并且子元素已就绪
         await nextTick();
         if (isFirstLoad.value) {
-            // console.log("Adding ignores for the first time...");
             addIgnores();
             isFirstLoad.value = false; // 调用后将标志设置为 false，防止再次调用
         }

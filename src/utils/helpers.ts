@@ -9,7 +9,6 @@ export function playAudio(src: string) {
  * @returns The extracted content with list items on separate lines.
  */
 export function stripHtmlTags(htmlString: string): string {
-  console.log("Youdao raw meaning:", htmlString);
   if (!htmlString) {
     return '';
   }
@@ -29,7 +28,6 @@ export function stripHtmlTags(htmlString: string): string {
   // 遍历所有 <li> 元素，提取它们的文本内容
   const extractedText = Array.from(liElements).map(li => li.textContent.trim());
 
-  console.log("Youdao meaning:", extractedText.join('\n'));
   // 将所有提取出的文本用换行符连接起来
   return extractedText.join('\n');
 }
