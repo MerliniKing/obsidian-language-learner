@@ -526,19 +526,42 @@ export default class LanguageLearner extends Plugin {
         let dataBase = this.app.vault.getAbstractFileByPath(
             this.settings.review_database
         );
+        // console.log("refreshReviewDb", this.settings.review_database);
         if (!dataBase || "children" in dataBase) {
             new Notice("Invalid word database path");
             return;
         }
 
+        // console.log("database", dataBase);
         let db = dataBase as TFile;
         let text = await this.app.vault.read(db);
+        // console.log("text : ", text);
         let oldRecord = {} as { [K in string]: string };
+        //这段逻辑猜测可能是Spaced Repetition的记录信息
         text.match(/#word(\n.+)+\n(<!--SR.*?-->)/g)
-            ?.map((v) => v.match(/#### (.+)[\s\S]+(<!--SR.*-->)/))
+            ?.map((v) => v.match(/单词: (.+)[\s\S]+(<!--SR.*-->)/))
             ?.forEach((v) => {
                 oldRecord[v[1]] = v[2];
             });
+        // console.log("oldRecord", oldRecord);
+
+        let oldAnkiCardIdRecords = {} as { [K in string]: string };
+        // 新增的处理anki card id的逻辑
+        text.match(/#word(\n.+)+\n(<!--ID.*?-->)/g)
+            ?.map((v) => v.match(/单词: (.+)[\s\S]+(<!--ID.*-->)/))
+            ?.forEach((v) => {
+                oldAnkiCardIdRecords[v[1]] = v[2];
+            });
+
+        // The `?.` checks if the match result is null or undefined.
+        // If it is, the expression evaluates to null or undefined.
+        // The `??` then provides the default value "English".
+        let deckName = text.match(/TARGET DECK: (.+?)\n/)?.[1] ?? "English";
+
+        // The rest of your original logic to handle empty or "null" strings
+        if (deckName.trim() === "" || deckName.trim() === "null") {
+        deckName = "English";
+        }
 
         // let data = await this.db.getExpressionAfter(this.settings.last_sync)
         let data = await this.db.getExpressionAfter("1970-01-01T00:00:00Z");
@@ -546,36 +569,52 @@ export default class LanguageLearner extends Plugin {
             // new Notice("Nothing new")
             return;
         }
+        console.log("data: ", data);
 
         data.sort((a, b) => a.expression.localeCompare(b.expression));
 
         let newText = data.map((word) => {
             let notes = word.notes.length === 0
                 ? ""
-                : "**Notes**:\n" + word.notes.join("\n").trim() + "\n";
+                : word.notes.join("\n\n").trim();
             let sentences = word.sentences.length === 0
                 ? ""
-                : "**Sentences**:\n" +
-                word.sentences.map((sen) => {
+                : word.sentences.map((sen) => {
                     return (
                         `*${sen.text.trim()}*` + "\n" +
                         (sen.trans ? sen.trans.trim() + "\n" : "") +
-                        (sen.origin ? sen.origin.trim() : "")
+                        (sen.origin ? "----------------------------" + sen.origin.trim() : "")
                     );
-                }).join("\n").trim() + "\n";
+                }).join("\n\n").trim();
 
+            // 下面是我改动的输出格式，适配
             return (
                 `#word\n` +
-                `#### ${word.expression}\n` +
-                `${this.settings.review_delimiter}\n` +
-                `${word.meaning}\n` +
-                `${notes}` +
-                `${sentences}` +
-                (oldRecord[word.expression] ? oldRecord[word.expression] + "\n" : "")
+                "START\n" +
+                "import_word_from_obsidian\n" + 
+                `单词: ${word.expression}\n` +
+                `释义: ${word.meaning}\n` +
+                `例句: ${sentences}\n` +
+                `笔记: ${notes}\n` +
+                (oldRecord[word.expression] ? oldRecord[word.expression] + "\n" : "") +
+                (oldAnkiCardIdRecords[word.expression] ? oldAnkiCardIdRecords[word.expression] + "\n" : "")+
+                "END\n"
             );
+
+            // 原有的输出格式
+            // return (
+            //     `#word\n` +
+            //     `#### ${word.expression}\n` +
+            //     `${this.settings.review_delimiter}\n` +
+            //     `${word.meaning}\n` +
+            //     `${notes}` +
+            //     `${sentences}` +
+            //     (oldRecord[word.expression] ? oldRecord[word.expression] + "\n" : "") +
+            //     (oldAnkiCardIdRecords[word.expression] ? oldAnkiCardIdRecords[word.expression] + "\n" : "")
+            // );
         }).join("\n") + "\n";
 
-        newText = "#flashcards\n\n" + newText;
+        newText = "#flashcards\n\n" + "TARGET DECK: " + deckName + "\n\n" + newText;
         await this.app.vault.modify(db, newText);
 
         this.saveSettings();

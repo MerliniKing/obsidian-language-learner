@@ -35,7 +35,7 @@
 						@search="tagSearch"></NSelect>
 				</NFormItem> -->
 				<!-- 可选,可以记多条笔记 -->
-				<!-- <NFormItem :label="t('Notes')" :label-style="labelStyle" path="tags">
+				<NFormItem :label="t('Notes')" :label-style="labelStyle" path="tags">
 					<NDynamicInput v-model:value="model.notes" :create-button-props="{ size: 'small' }">
 						<template #create-button-default>
 							{{ t("Create") }}
@@ -45,7 +45,7 @@
 								v-model:value="model.notes[index]" />
 						</template>
 					</NDynamicInput>
-				</NFormItem> -->
+				</NFormItem>
 				<!-- 可选,例句也可以记多条 -->
 				<div style="margin-bottom: 8px">
 					<label for="Sentences" :style="[labelStyle]">{{
