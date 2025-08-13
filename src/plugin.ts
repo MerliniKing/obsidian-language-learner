@@ -389,7 +389,15 @@ export default class LanguageLearner extends Plugin {
                 const parentPath = file.parent.path === '/' ? '' : file.parent.path;
                 const newFilePath = `${parentPath}/${newTitle}.md`;
                 
-                await this.app.vault.rename(file, newFilePath);
+                try {
+                    // await 会等待 Promise 完成，如果失败，就会跳到 catch 块
+                    await this.app.vault.rename(file, newFilePath);
+                } catch (e) {
+                    // 使用 new Notice() 显示一个错误通知
+                    new Notice(`Error: ${e.message}`);
+                    console.error("Error:", e);
+                    return;
+                }
                 
                 const originValue = `《${newTitle}》`;
                 
